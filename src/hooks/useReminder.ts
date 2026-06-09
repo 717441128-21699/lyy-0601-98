@@ -6,6 +6,8 @@ type ReminderType = 'sedentary' | 'water' | 'blink' | 'eye' | 'stretch' | 'pomod
 
 interface ReminderState {
   lastTriggered: Record<ReminderType, number>;
+  lastSedentaryUpdate: number;
+  workStartTime: number | null;
 }
 
 export const useReminder = () => {
@@ -27,15 +29,20 @@ export const useReminder = () => {
       stretch: 0,
       pomodoro: 0,
     },
+    lastSedentaryUpdate: Date.now(),
+    workStartTime: null,
   });
 
   const showNotification = useCallback(async (title: string, body: string) => {
-    if (settings.focusMode.enabled && isInTimeRange(settings.focusMode.start, settings.focusMode.end)) {
-      if (settings.focusMode.muteSound) {
+    if (settings.focusMode.enabled) {
+      const isInFocusTime = isInTimeRange(settings.focusMode.start, settings.focusMode.end);
+      if (isInFocusTime && settings.focusMode.muteSound) {
+        console.log('[专注模式] 通知已压制:', title);
         return;
       }
     }
     
+    console.log('[提醒] 显示通知:', title);
     if (window.electronAPI) {
       await window.electronAPI.showNotification(title, body);
     } else {
@@ -48,6 +55,17 @@ export const useReminder = () => {
   const shouldTrigger = useCallback((type: ReminderType, intervalMs: number): boolean => {
     const now = Date.now();
     const last = reminderState.current.lastTriggered[type];
+    const workStart = reminderState.current.workStartTime;
+    
+    if (workStart && now - workStart < 5000) {
+      return false;
+    }
+    
+    if (last === 0 && workStart) {
+      reminderState.current.lastTriggered[type] = now;
+      return false;
+    }
+    
     if (now - last >= intervalMs) {
       reminderState.current.lastTriggered[type] = now;
       return true;
@@ -64,19 +82,27 @@ export const useReminder = () => {
       if (shouldTrigger('sedentary', intervalMs)) {
         const isAbnormal = settings.abnormalReminder.enabled &&
           consecutiveAbnormalCount >= settings.abnormalReminder.maxConsecutive;
+        const isSevere = consecutiveAbnormalCount >= settings.abnormalReminder.maxConsecutive + 2;
         
-        if (isAbnormal) {
+        if (isSevere) {
+          showNotification(
+            '🚨 紧急健康提醒',
+            `您已经连续${consecutiveAbnormalCount}次忽略提醒！请立即起身活动，否则可能对健康造成严重损害！`
+          );
+        } else if (isAbnormal) {
           showNotification(
             '⚠️ 连续久坐警告',
             `您已经连续${consecutiveAbnormalCount}次忽略久坐提醒，请立即起身活动！`
           );
-          incrementAbnormalCount();
         } else {
           showNotification(
             '久坐提醒',
             `您已连续工作${settings.sedentary.thresholdMinutes}分钟，起身活动一下吧！`
           );
         }
+        
+        incrementAbnormalCount();
+        console.log('[异常计数] 递增为:', consecutiveAbnormalCount + 1);
       }
     }
 
@@ -121,13 +147,31 @@ export const useReminder = () => {
     let reminderInterval: ReturnType<typeof setInterval> | null = null;
 
     if (isWorking) {
+      const now = Date.now();
+      reminderState.current.workStartTime = now;
+      reminderState.current.lastSedentaryUpdate = now;
+      
+      console.log('[工作开始] 初始化提醒时间戳');
+      
       sedentaryInterval = setInterval(() => {
-        incrementSedentaryMinutes();
-      }, 60000);
+        const currentTime = Date.now();
+        const timeDiff = currentTime - reminderState.current.lastSedentaryUpdate;
+        const minutesPassed = Math.floor(timeDiff / 60000);
+        
+        if (minutesPassed >= 1) {
+          for (let i = 0; i < minutesPassed; i++) {
+            incrementSedentaryMinutes();
+          }
+          reminderState.current.lastSedentaryUpdate = currentTime;
+          console.log('[久坐计时] 增加', minutesPassed, '分钟');
+        }
+      }, 5000);
 
       reminderInterval = setInterval(() => {
         checkReminders();
-      }, 10000);
+      }, 15000);
+    } else {
+      reminderState.current.workStartTime = null;
     }
 
     return () => {

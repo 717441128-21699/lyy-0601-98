@@ -34,7 +34,7 @@ export const loadDailyRecords = (): DailyRecord[] => {
   } catch (e) {
     console.error('Failed to load records:', e);
   }
-  return generateMockRecords();
+  return generateMockRecords(false);
 };
 
 export const saveDailyRecords = (records: DailyRecord[]): void => {
@@ -71,10 +71,11 @@ export const createEmptyDailyRecord = (date: string): DailyRecord => ({
   screenDistance: null,
 });
 
-const generateMockRecords = (): DailyRecord[] => {
+const generateMockRecords = (includeToday: boolean = false): DailyRecord[] => {
   const records: DailyRecord[] = [];
   const today = new Date();
-  for (let i = 6; i >= 0; i--) {
+  const startDay = includeToday ? 6 : 1;
+  for (let i = startDay; i >= 1; i--) {
     const date = new Date(today);
     date.setDate(date.getDate() - i);
     const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;

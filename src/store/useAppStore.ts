@@ -33,6 +33,12 @@ const initializeTodayRecord = (): DailyRecord => {
   return createEmptyDailyRecord(todayStr);
 };
 
+const initializeHistoryRecords = (): DailyRecord[] => {
+  const todayStr = getTodayString();
+  const history = loadDailyRecords();
+  return history.filter(r => r.date !== todayStr);
+};
+
 export const useAppStore = create<AppStore>((set, get) => ({
   currentView: 'today',
   isWorking: false,
@@ -40,7 +46,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   consecutiveAbnormalCount: 0,
   todayRecord: initializeTodayRecord(),
   settings: loadSettings(),
-  historyRecords: loadDailyRecords(),
+  historyRecords: initializeHistoryRecords(),
 
   setCurrentView: (view) => set({ currentView: view }),
 
@@ -60,6 +66,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       ...state.todayRecord,
       restCount: state.todayRecord.restCount + 1,
     },
+    consecutiveAbnormalCount: 0,
   })),
 
   addWaterIntake: () => set((state) => ({
@@ -78,11 +85,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   addPostureRecord: (status) => set((state) => {
     const record: PostureRecord = { timestamp: Date.now(), status };
+    const shouldResetAbnormal = status === 'good';
     return {
       todayRecord: {
         ...state.todayRecord,
         postureRecords: [...state.todayRecord.postureRecords, record],
       },
+      consecutiveAbnormalCount: shouldResetAbnormal ? 0 : state.consecutiveAbnormalCount,
     };
   }),
 
@@ -134,15 +143,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const state = get();
     const todayStr = getTodayString();
     const updatedRecord = { ...state.todayRecord, date: todayStr };
-    const existingIndex = state.historyRecords.findIndex(r => r.date === todayStr);
-    let newHistory: DailyRecord[];
+    
+    const allRecords = loadDailyRecords();
+    const existingIndex = allRecords.findIndex(r => r.date === todayStr);
+    let newAllRecords: DailyRecord[];
     if (existingIndex >= 0) {
-      newHistory = [...state.historyRecords];
-      newHistory[existingIndex] = updatedRecord;
+      newAllRecords = [...allRecords];
+      newAllRecords[existingIndex] = updatedRecord;
     } else {
-      newHistory = [...state.historyRecords, updatedRecord];
+      newAllRecords = [...allRecords, updatedRecord];
     }
-    saveDailyRecords(newHistory);
-    set({ historyRecords: newHistory });
+    saveDailyRecords(newAllRecords);
+    
+    const newHistoryRecords = newAllRecords.filter(r => r.date !== todayStr);
+    set({ historyRecords: newHistoryRecords });
   },
 }));

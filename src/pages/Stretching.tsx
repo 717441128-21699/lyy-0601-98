@@ -45,6 +45,20 @@ export const Stretching: React.FC = () => {
 
   const timer = useCountdownTimer(currentAction?.duration || 0, handleComplete);
 
+  React.useEffect(() => {
+    if (isStarted && timer.seconds === 0 && currentAction) {
+      const currentIndex = filteredActions.findIndex(a => a.id === currentAction.id);
+      if (currentIndex < filteredActions.length - 1) {
+        const nextAction = filteredActions[currentIndex + 1];
+        if (nextAction) {
+          setTimeout(() => {
+            timer.resetWithNewDuration(nextAction.duration, true);
+          }, 100);
+        }
+      }
+    }
+  }, [currentAction, isStarted, filteredActions, timer]);
+
   const progress = currentAction
     ? ((currentAction.duration - timer.seconds) / currentAction.duration) * 100
     : 0;
@@ -70,8 +84,7 @@ export const Stretching: React.FC = () => {
   const startStretching = (action: StretchAction) => {
     setCurrentAction(action);
     setIsStarted(true);
-    timer.reset();
-    setTimeout(() => timer.start(), 100);
+    timer.resetWithNewDuration(action.duration, true);
   };
 
   const pauseStretching = () => {
@@ -86,9 +99,9 @@ export const Stretching: React.FC = () => {
     if (currentAction) {
       const currentIndex = filteredActions.findIndex(a => a.id === currentAction.id);
       if (currentIndex < filteredActions.length - 1) {
-        setCurrentAction(filteredActions[currentIndex + 1]);
-        timer.reset();
-        setTimeout(() => timer.start(), 100);
+        const nextAction = filteredActions[currentIndex + 1];
+        setCurrentAction(nextAction);
+        timer.resetWithNewDuration(nextAction.duration, timer.isActive);
       }
     }
   };

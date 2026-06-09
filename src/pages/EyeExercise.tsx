@@ -29,7 +29,9 @@ export const EyeExercise: React.FC = () => {
 
   const handleComplete = useCallback(() => {
     if (currentStepIndex < eyeExerciseSteps.length - 1) {
-      setCurrentStepIndex(prev => prev + 1);
+      const nextIndex = currentStepIndex + 1;
+      const nextDuration = eyeExerciseSteps[nextIndex].duration;
+      setCurrentStepIndex(nextIndex);
     } else {
       addEyeExerciseMinutes(Math.ceil(totalDuration / 60));
       setIsStarted(false);
@@ -37,6 +39,17 @@ export const EyeExercise: React.FC = () => {
   }, [currentStepIndex, totalDuration, addEyeExerciseMinutes]);
 
   const timer = useCountdownTimer(currentStep?.duration || 0, handleComplete);
+
+  React.useEffect(() => {
+    if (isStarted && timer.seconds === 0 && currentStepIndex < eyeExerciseSteps.length - 1) {
+      const nextDuration = eyeExerciseSteps[currentStepIndex + 1]?.duration || 0;
+      if (nextDuration > 0) {
+        setTimeout(() => {
+          timer.resetWithNewDuration(nextDuration, true);
+        }, 100);
+      }
+    }
+  }, [currentStepIndex, isStarted, timer]);
 
   const progress = ((currentStep.duration - timer.seconds) / currentStep.duration) * 100;
   const overallProgress = ((currentStepIndex * currentStep.duration + (currentStep.duration - timer.seconds)) / totalDuration) * 100;
@@ -56,8 +69,10 @@ export const EyeExercise: React.FC = () => {
 
   const skipStep = () => {
     if (currentStepIndex < eyeExerciseSteps.length - 1) {
-      setCurrentStepIndex(prev => prev + 1);
-      timer.reset();
+      const nextIndex = currentStepIndex + 1;
+      const nextDuration = eyeExerciseSteps[nextIndex].duration;
+      setCurrentStepIndex(nextIndex);
+      timer.resetWithNewDuration(nextDuration, timer.isActive);
     }
   };
 

@@ -130,8 +130,10 @@ export const useCountdownTimer = (initialSeconds: number, onComplete?: () => voi
   const [seconds, setSeconds] = useState(initialSeconds);
   const [isActive, setIsActive] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasTriggeredComplete = useRef(false);
 
   const start = useCallback(() => {
+    hasTriggeredComplete.current = false;
     setIsActive(true);
   }, []);
 
@@ -140,18 +142,39 @@ export const useCountdownTimer = (initialSeconds: number, onComplete?: () => voi
   }, []);
 
   const reset = useCallback(() => {
+    hasTriggeredComplete.current = false;
     setIsActive(false);
+    setSeconds(initialSeconds);
+  }, [initialSeconds]);
+
+  const resetWithNewDuration = useCallback((newDuration: number, autoStart: boolean = false) => {
+    hasTriggeredComplete.current = false;
+    setSeconds(newDuration);
+    setIsActive(autoStart);
+  }, []);
+
+  useEffect(() => {
     setSeconds(initialSeconds);
   }, [initialSeconds]);
 
   useEffect(() => {
     if (isActive && seconds > 0) {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
       intervalRef.current = setInterval(() => {
         setSeconds(s => s - 1);
       }, 1000);
-    } else if (seconds === 0 && isActive) {
+    } else if (seconds === 0 && isActive && !hasTriggeredComplete.current) {
+      hasTriggeredComplete.current = true;
       setIsActive(false);
-      onComplete?.();
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      setTimeout(() => {
+        onComplete?.();
+      }, 50);
     }
     return () => {
       if (intervalRef.current) {
@@ -160,5 +183,5 @@ export const useCountdownTimer = (initialSeconds: number, onComplete?: () => voi
     };
   }, [isActive, seconds, onComplete]);
 
-  return { seconds, isActive, start, pause, reset };
+  return { seconds, isActive, start, pause, reset, resetWithNewDuration };
 };

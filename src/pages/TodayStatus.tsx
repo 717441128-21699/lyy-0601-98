@@ -64,19 +64,59 @@ export const TodayStatus: React.FC = () => {
         <p className="text-ink-400">保持良好习惯，守护你的健康</p>
       </div>
 
-      {consecutiveAbnormalCount >= 2 && (
+      {consecutiveAbnormalCount >= settings.abnormalReminder.maxConsecutive && (
         <motion.div
-          className="mb-6 p-4 bg-accent-50 border border-accent-200 rounded-2xl flex items-center gap-3"
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
+          className={`mb-6 p-4 border rounded-2xl flex items-center gap-3 ${
+            consecutiveAbnormalCount >= settings.abnormalReminder.maxConsecutive + 2
+              ? 'bg-red-50 border-red-300 animate-pulse-slow'
+              : 'bg-accent-50 border-accent-200'
+          }`}
+          initial={{ opacity: 0, y: -10, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
         >
-          <AlertTriangle className="text-accent-500 flex-shrink-0" />
-          <div>
-            <p className="font-medium text-accent-700">连续忽略提醒警告</p>
-            <p className="text-sm text-accent-600">
-              您已连续 {consecutiveAbnormalCount} 次忽略提醒，请注意休息！
+          <div className={`p-3 rounded-full ${
+            consecutiveAbnormalCount >= settings.abnormalReminder.maxConsecutive + 2
+              ? 'bg-red-100'
+              : 'bg-accent-100'
+          }`}>
+            <AlertTriangle className={`flex-shrink-0 ${
+              consecutiveAbnormalCount >= settings.abnormalReminder.maxConsecutive + 2
+                ? 'text-red-500 animate-bounce-soft'
+                : 'text-accent-500'
+            }`} size={28} />
+          </div>
+          <div className="flex-1">
+            <p className={`font-bold ${
+              consecutiveAbnormalCount >= settings.abnormalReminder.maxConsecutive + 2
+                ? 'text-red-700'
+                : 'text-accent-700'
+            }`}>
+              {consecutiveAbnormalCount >= settings.abnormalReminder.maxConsecutive + 2
+                ? '⚠️ 紧急健康提醒'
+                : '连续忽略提醒警告'}
+            </p>
+            <p className={`text-sm ${
+              consecutiveAbnormalCount >= settings.abnormalReminder.maxConsecutive + 2
+                ? 'text-red-600'
+                : 'text-accent-600'
+            }`}>
+              您已连续 {consecutiveAbnormalCount} 次忽略提醒！
+              {consecutiveAbnormalCount >= settings.abnormalReminder.maxConsecutive + 2
+                ? ' 请立即起身活动，否则可能对健康造成损害！'
+                : ' 建议立即起身活动几分钟。'}
             </p>
           </div>
+          <button
+            onClick={() => {
+              stopWorking();
+              setCurrentView('rest');
+            }}
+            className="btn-accent btn-sm flex items-center gap-2"
+          >
+            <Coffee size={16} />
+            立即休息
+          </button>
         </motion.div>
       )}
 
