@@ -1,0 +1,133 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Noto Sans SC', system-ui, -apple-system, sans-serif;
+  line-height: 1.6;
+  font-weight: 400;
+  color: #2C3E50;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #FAFAF7 0%, #F3F1EB 100%);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #D5DCE1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #ABB8C3;
+}
+
+@layer components {
+  .card {
+    @apply bg-white rounded-2xl shadow-card p-6 transition-all duration-300;
+  }
+
+  .card:hover {
+    @apply shadow-lg;
+  }
+
+  .btn-primary {
+    @apply px-6 py-3 bg-primary-400 text-white rounded-full font-medium
+           transition-all duration-300 shadow-soft
+           hover:bg-primary-500 hover:shadow-glow hover:scale-105
+           active:scale-95 focus:outline-none focus:ring-2 focus:ring-primary-300;
+  }
+
+  .btn-secondary {
+    @apply px-6 py-3 bg-white text-ink-500 rounded-full font-medium
+           border border-ink-200 transition-all duration-300 shadow-soft
+           hover:bg-warm-100 hover:border-primary-300 hover:scale-105
+           active:scale-95 focus:outline-none;
+  }
+
+  .btn-accent {
+    @apply px-6 py-3 bg-accent-500 text-white rounded-full font-medium
+           transition-all duration-300 shadow-soft
+           hover:bg-accent-600 hover:scale-105
+           active:scale-95 focus:outline-none;
+  }
+
+  .btn-sm {
+    @apply px-4 py-2 text-sm;
+  }
+
+  .tab-button {
+    @apply px-4 py-3 text-ink-400 font-medium transition-all duration-300
+           rounded-xl hover:text-ink-600 hover:bg-warm-200;
+  }
+
+  .tab-button.active {
+    @apply bg-primary-400 text-white shadow-glow;
+  }
+
+  .input-field {
+    @apply w-full px-4 py-3 bg-warm-100 rounded-xl border border-transparent
+           transition-all duration-300 focus:outline-none focus:border-primary-400
+           focus:bg-white focus:shadow-glow;
+  }
+
+  .toggle-switch {
+    @apply relative inline-flex h-6 w-11 items-center rounded-full transition-colors;
+  }
+
+  .progress-ring {
+    transform: rotate(-90deg);
+    transform-origin: center;
+  }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.8); opacity: 1; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 2s ease-out infinite;
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, #4ECDC4 0%, #3DB8AF 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.glass-effect {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(10px);
+}
