@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
+import React, { useMemo, useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -13,11 +13,12 @@ import {
   ArcElement,
   Filler,
 } from 'chart.js';
-import { Line, Doughnut } from 'react-chartjs-2';
+import { Line, Doughnut, Bar, Chart } from 'react-chartjs-2';
 import { useAppStore } from '@/store/useAppStore';
 import { ProgressRing } from '@/components/ProgressRing';
 import { exportToCSV } from '@/utils/storage';
 import { getLast7Days } from '@/utils/dateUtils';
+import type { PlanAdjustment } from '@/types';
 import {
   TrendingUp,
   Download,
@@ -25,6 +26,14 @@ import {
   Target,
   Award,
   AlertTriangle,
+  BarChart3,
+  Check,
+  X,
+  RefreshCw,
+  Zap,
+  Brain,
+  Heart,
+  ChevronRight,
 } from 'lucide-react';
 
 ChartJS.register(
@@ -40,11 +49,65 @@ ChartJS.register(
   Filler
 );
 
+const getLast30Days = () => {
+  const days = [];
+  for (let i = 29; i >= 0; i--) {
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    days.push(`${date.getMonth() + 1}/${date.getDate()}`);
+  }
+  return days;
+};
+
 export const TrendReport: React.FC = () => {
-  const { historyRecords, todayRecord, updateSettings, settings } = useAppStore();
+  const {
+    historyRecords,
+    todayRecord,
+    updateSettings,
+    settings,
+    planAdjustments,
+    generatePlanSuggestions,
+    applyPlanAdjustment,
+    dismissPlanAdjustment,
+  } = useAppStore();
   const [activeChart, setActiveChart] = useState<'sedentary' | 'water' | 'exercise'>('sedentary');
+  const [timeRange, setTimeRange] = useState<'week' | 'month'>('week');
+  const [showAdjustments, setShowAdjustments] = useState(false);
+
+  useEffect(() => {
+    generatePlanSuggestions();
+  }, [generatePlanSuggestions]);
 
   const last7Days = getLast7Days();
+  const last30Days = getLast30Days();
+
+  const timeRangeDays = timeRange === 'week' ? last7Days : last30Days;
+  const daysBack = timeRange === 'week' ? 6 : 29;
+
+  const timeRangeRecords = useMemo(() => {
+    return timeRangeDays.map((_, index) => {
+      const date = new Date();
+      date.setDate(date.getDate() - (daysBack - index));
+      const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      return historyRecords.find(r => r.date === dateStr) || {
+        date: dateStr,
+        sedentaryMinutes: 0,
+        restCount: 0,
+        waterIntake: 0,
+        blinkCount: 0,
+        postureRecords: [],
+        painRecords: [],
+        eyeExerciseMinutes: 0,
+        stretchingMinutes: 0,
+        fatigueScore: 0,
+        screenDistance: null,
+        activityRecords: [],
+        reminderLogs: [],
+        abnormalReminderCount: 0,
+      };
+    });
+  }, [historyRecords, timeRangeDays, daysBack]);
+
   const last7Records = useMemo(() => {
     return last7Days.map((_, index) => {
       const date = new Date();
@@ -62,16 +125,19 @@ export const TrendReport: React.FC = () => {
         stretchingMinutes: 0,
         fatigueScore: 0,
         screenDistance: null,
+        activityRecords: [],
+        reminderLogs: [],
+        abnormalReminderCount: 0,
       };
     });
   }, [historyRecords, last7Days]);
 
   const chartData = useMemo(() => {
-    const labels = last7Days;
+    const labels = timeRangeDays;
     const datasets = {
       sedentary: {
         label: '久坐时长(分钟)',
-        data: last7Records.map(r => r.sedentaryMinutes),
+        data: timeRangeRecords.map(r => r.sedentaryMinutes),
         borderColor: '#4ECDC4',
         backgroundColor: 'rgba(78, 205, 196, 0.1)',
         fill: true,
@@ -79,7 +145,7 @@ export const TrendReport: React.FC = () => {
       },
       water: {
         label: '饮水量(杯)',
-        data: last7Records.map(r => r.waterIntake),
+        data: timeRangeRecords.map(r => r.waterIntake),
         borderColor: '#FF6B6B',
         backgroundColor: 'rgba(255, 107, 107, 0.1)',
         fill: true,
@@ -87,7 +153,7 @@ export const TrendReport: React.FC = () => {
       },
       exercise: {
         label: '运动时长(分钟)',
-        data: last7Records.map(r => r.eyeExerciseMinutes + r.stretchingMinutes),
+        data: timeRangeRecords.map(r => r.eyeExerciseMinutes + r.stretchingMinutes),
         borderColor: '#2C3E50',
         backgroundColor: 'rgba(44, 62, 80, 0.1)',
         fill: true,
@@ -95,7 +161,105 @@ export const TrendReport: React.FC = () => {
       },
     };
     return { labels, datasets: [datasets[activeChart]] };
-  }, [last7Days, last7Records, activeChart]);
+  }, [timeRangeDays, timeRangeRecords, activeChart]);
+
+  const comparisonChartData = useMemo(() => {
+    const labels = timeRangeDays;
+    const maxRest = Math.max(...timeRangeRecords.map(r => r.restCount), 1);
+    const maxAbnormal = Math.max(...timeRangeRecords.map(r => r.abnormalReminderCount || 0), 1);
+    const maxFatigue = Math.max(...timeRangeRecords.map(r => r.fatigueScore), 1);
+    
+    return {
+      labels,
+      datasets: [
+        {
+          type: 'line' as const,
+          label: '休息次数',
+          data: timeRangeRecords.map(r => (r.restCount / maxRest) * 100),
+          borderColor: '#4ECDC4',
+          backgroundColor: 'rgba(78, 205, 196, 0.1)',
+          yAxisID: 'y',
+          tension: 0.4,
+          fill: true,
+        },
+        {
+          type: 'bar' as const,
+          label: '异常提醒次数',
+          data: timeRangeRecords.map(r => (r.abnormalReminderCount || 0) / maxAbnormal * 100),
+          backgroundColor: 'rgba(255, 107, 107, 0.6)',
+          yAxisID: 'y',
+        },
+        {
+          type: 'line' as const,
+          label: '疲劳评分',
+          data: timeRangeRecords.map(r => (r.fatigueScore / maxFatigue) * 100),
+          borderColor: '#FFB347',
+          backgroundColor: 'rgba(255, 179, 71, 0.1)',
+          yAxisID: 'y',
+          tension: 0.4,
+          borderDash: [5, 5],
+        },
+      ],
+    };
+  }, [timeRangeDays, timeRangeRecords]);
+
+  const comparisonChartOptions = {
+    responsive: true,
+    plugins: {
+      legend: {
+        display: true,
+        position: 'top' as const,
+      },
+      tooltip: {
+        backgroundColor: '#2C3E50',
+        titleColor: '#fff',
+        bodyColor: '#fff',
+        borderRadius: 12,
+        padding: 12,
+      },
+    },
+    scales: {
+      x: {
+        grid: {
+          display: false,
+        },
+        ticks: {
+          color: '#ABB8C3',
+        },
+      },
+      y: {
+        grid: {
+          color: '#EAEDEF',
+        },
+        ticks: {
+          color: '#ABB8C3',
+          callback: (value: number | string) => `${value}%`,
+        },
+        min: 0,
+        max: 100,
+      },
+    },
+  };
+
+  const habitRates = useMemo(() => {
+    const records = timeRangeRecords;
+    const avgRestCount = records.reduce((sum, r) => sum + r.restCount, 0) / records.length;
+    const avgWater = records.reduce((sum, r) => sum + r.waterIntake, 0) / records.length;
+    const avgEye = records.reduce((sum, r) => sum + r.eyeExerciseMinutes, 0) / records.length;
+    const avgStretch = records.reduce((sum, r) => sum + r.stretchingMinutes, 0) / records.length;
+
+    return [
+      { label: '休息提醒', value: Math.min(100, (avgRestCount / 4) * 100), target: '每日4次', current: `${avgRestCount.toFixed(1)}次` },
+      { label: '饮水目标', value: Math.min(100, (avgWater / 8) * 100), target: '每日8杯', current: `${avgWater.toFixed(1)}杯` },
+      { label: '眼保健操', value: Math.min(100, (avgEye / 10) * 100), target: '每日10分钟', current: `${avgEye.toFixed(1)}分钟` },
+      { label: '拉伸运动', value: Math.min(100, (avgStretch / 15) * 100), target: '每日15分钟', current: `${avgStretch.toFixed(1)}分钟` },
+    ];
+  }, [timeRangeRecords]);
+
+  const avgFatigue = useMemo(() => {
+    const scores = timeRangeRecords.filter(r => r.fatigueScore > 0).map(r => r.fatigueScore);
+    return scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : '-';
+  }, [timeRangeRecords]);
 
   const chartOptions = {
     responsive: true,
@@ -131,29 +295,9 @@ export const TrendReport: React.FC = () => {
     },
   };
 
-  const habitRates = useMemo(() => {
-    const weekRecords = last7Records;
-    const avgRestCount = weekRecords.reduce((sum, r) => sum + r.restCount, 0) / 7;
-    const avgWater = weekRecords.reduce((sum, r) => sum + r.waterIntake, 0) / 7;
-    const avgEye = weekRecords.reduce((sum, r) => sum + r.eyeExerciseMinutes, 0) / 7;
-    const avgStretch = weekRecords.reduce((sum, r) => sum + r.stretchingMinutes, 0) / 7;
-
-    return [
-      { label: '休息提醒', value: Math.min(100, (avgRestCount / 4) * 100), target: '每日4次', current: `${avgRestCount.toFixed(1)}次` },
-      { label: '饮水目标', value: Math.min(100, (avgWater / 8) * 100), target: '每日8杯', current: `${avgWater.toFixed(1)}杯` },
-      { label: '眼保健操', value: Math.min(100, (avgEye / 10) * 100), target: '每日10分钟', current: `${avgEye.toFixed(1)}分钟` },
-      { label: '拉伸运动', value: Math.min(100, (avgStretch / 15) * 100), target: '每日15分钟', current: `${avgStretch.toFixed(1)}分钟` },
-    ];
-  }, [last7Records]);
-
   const overallScore = useMemo(() => {
     return Math.round(habitRates.reduce((sum, h) => sum + h.value, 0) / habitRates.length);
   }, [habitRates]);
-
-  const avgFatigue = useMemo(() => {
-    const scores = last7Records.filter(r => r.fatigueScore > 0).map(r => r.fatigueScore);
-    return scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : '-';
-  }, [last7Records]);
 
   const doughnutData = {
     labels: habitRates.map(h => h.label),
@@ -207,7 +351,7 @@ export const TrendReport: React.FC = () => {
   }, [overallScore, habitRates, avgFatigue]);
 
   const handleExport = () => {
-    exportToCSV([...last7Records, todayRecord]);
+    exportToCSV([...timeRangeRecords, todayRecord]);
   };
 
   const handleAutoAdjust = () => {
@@ -242,6 +386,28 @@ export const TrendReport: React.FC = () => {
           <p className="text-ink-400">查看你的健康数据趋势和分析</p>
         </div>
         <div className="flex gap-2">
+          <div className="flex bg-warm-100 rounded-lg p-1">
+            <button
+              onClick={() => setTimeRange('week')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                timeRange === 'week'
+                  ? 'bg-white text-primary-600 shadow-sm'
+                  : 'text-ink-500 hover:text-ink-700'
+              }`}
+            >
+              周视图
+            </button>
+            <button
+              onClick={() => setTimeRange('month')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                timeRange === 'month'
+                  ? 'bg-white text-primary-600 shadow-sm'
+                  : 'text-ink-500 hover:text-ink-700'
+              }`}
+            >
+              月视图
+            </button>
+          </div>
           <button onClick={handleAutoAdjust} className="btn-secondary btn-sm flex items-center gap-2">
             <Target size={16} />
             智能调整计划
@@ -279,9 +445,9 @@ export const TrendReport: React.FC = () => {
         >
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-ink-400 mb-1">本周平均久坐</p>
+              <p className="text-sm text-ink-400 mb-1">{timeRange === 'week' ? '本周' : '本月'}平均久坐</p>
               <p className="text-3xl font-bold text-ink-700">
-                {Math.round(last7Records.reduce((s, r) => s + r.sedentaryMinutes, 0) / 7)}
+                {Math.round(timeRangeRecords.reduce((s, r) => s + r.sedentaryMinutes, 0) / timeRangeRecords.length)}
                 <span className="text-sm font-normal text-ink-400 ml-1">分钟</span>
               </p>
             </div>
@@ -321,7 +487,7 @@ export const TrendReport: React.FC = () => {
             <div>
               <p className="text-sm text-ink-400 mb-1">累计休息次数</p>
               <p className="text-3xl font-bold text-ink-700">
-                {last7Records.reduce((s, r) => s + r.restCount, 0)}
+                {timeRangeRecords.reduce((s, r) => s + r.restCount, 0)}
                 <span className="text-sm font-normal text-ink-400 ml-1">次</span>
               </p>
             </div>
@@ -340,7 +506,7 @@ export const TrendReport: React.FC = () => {
           transition={{ delay: 0.5 }}
         >
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-ink-700">周趋势图</h3>
+            <h3 className="text-lg font-bold text-ink-700">{timeRange === 'week' ? '周' : '月'}趋势图</h3>
             <div className="flex gap-2">
               {[
                 { id: 'sedentary', label: '久坐' },
@@ -463,6 +629,168 @@ export const TrendReport: React.FC = () => {
           </button>
         </motion.div>
       </div>
+
+      <motion.div
+        className="card animate-slide-up mb-6"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.9 }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-primary-100 rounded-lg">
+              <BarChart3 size={20} className="text-primary-500" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-ink-700">健康关系分析</h3>
+              <p className="text-sm text-ink-400">休息规律、异常提醒与疲劳评分的关联</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-ink-400">
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-0.5 bg-primary-400" />
+              <span>休息次数</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-3 bg-accent-400 opacity-60 rounded-sm" />
+              <span>异常提醒</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-0.5 bg-amber-400" style={{ borderStyle: 'dashed' }} />
+              <span>疲劳评分</span>
+            </div>
+          </div>
+        </div>
+        <div className="h-72">
+          <Chart type="bar" data={comparisonChartData} options={comparisonChartOptions} />
+        </div>
+        <div className="mt-4 p-4 bg-warm-50 rounded-xl">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-warm-200 rounded-lg flex-shrink-0">
+              <Brain size={20} className="text-ink-600" />
+            </div>
+            <div>
+              <p className="font-medium text-ink-700 mb-1">AI 分析洞察</p>
+              <p className="text-sm text-ink-500">
+                {comparisonChartData.datasets[0].data.reduce((a: number, b: number) => a + b, 0) / comparisonChartData.datasets[0].data.length > 60
+                  ? '你的休息规律保持良好，异常提醒次数和疲劳评分都处于较低水平，继续保持！'
+                  : comparisonChartData.datasets[1].data.reduce((a: number, b: number) => a + b, 0) > 200
+                  ? '异常提醒次数较多，与疲劳评分呈现正相关。建议增加休息频率，避免连续久坐。'
+                  : '休息频率和疲劳度有一定关联，建议在感到疲劳前主动休息，效果更好。'
+                }
+              </p>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+
+      <motion.div
+        className="card animate-slide-up"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 1.0 }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-accent-100 rounded-lg">
+              <Zap size={20} className="text-accent-500" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-ink-700">智能计划调整建议</h3>
+              <p className="text-sm text-ink-400">基于你的数据自动生成，可手动采纳</p>
+            </div>
+          </div>
+          <button
+            onClick={() => generatePlanSuggestions()}
+            className="btn-secondary btn-sm flex items-center gap-2"
+          >
+            <RefreshCw size={14} />
+            刷新建议
+          </button>
+        </div>
+
+        {planAdjustments.filter(a => !a.applied).length === 0 ? (
+          <div className="text-center py-8 text-ink-400">
+            <Heart size={48} className="mx-auto mb-2 opacity-50" />
+            <p>当前没有待采纳的计划调整建议</p>
+            <p className="text-sm">继续保持良好的健康习惯！</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <AnimatePresence>
+              {planAdjustments.filter(a => !a.applied).map((adjustment, index) => (
+                <motion.div
+                  key={adjustment.id}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                  transition={{ delay: index * 0.1 }}
+                  className="p-4 bg-warm-50 rounded-xl border border-warm-200"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <p className="font-medium text-ink-700">{adjustment.reason}</p>
+                      <div className="flex items-center gap-4 mt-2">
+                        <span className="text-sm text-ink-500">
+                          当前: {adjustment.type === 'pomodoro' && adjustment.currentValue > 15 ? `${adjustment.currentValue}分钟工作` :
+                                 adjustment.type === 'pomodoro' ? `${adjustment.currentValue}分钟休息` :
+                                 adjustment.type === 'sedentary' ? `${adjustment.currentValue}分钟提醒` :
+                                 adjustment.type === 'water' ? `${adjustment.currentValue}分钟间隔` :
+                                 `${adjustment.currentValue}小时间隔`}
+                        </span>
+                        <ChevronRight size={16} className="text-primary-500" />
+                        <span className="text-sm font-medium text-primary-600">
+                          建议: {adjustment.type === 'pomodoro' && adjustment.suggestedValue > 15 ? `${adjustment.suggestedValue}分钟工作` :
+                                 adjustment.type === 'pomodoro' ? `${adjustment.suggestedValue}分钟休息` :
+                                 adjustment.type === 'sedentary' ? `${adjustment.suggestedValue}分钟提醒` :
+                                 adjustment.type === 'water' ? `${adjustment.suggestedValue}分钟间隔` :
+                                 `${adjustment.suggestedValue}小时间隔`}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={() => applyPlanAdjustment(adjustment.id)}
+                      className="btn-primary btn-sm flex items-center gap-2"
+                    >
+                      <Check size={14} />
+                      采纳建议
+                    </button>
+                    <button
+                      onClick={() => dismissPlanAdjustment(adjustment.id)}
+                      className="btn-secondary btn-sm flex items-center gap-2"
+                    >
+                      <X size={14} />
+                      暂时忽略
+                    </button>
+                  </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+        )}
+
+        {planAdjustments.filter(a => a.applied).length > 0 && (
+          <div className="mt-4 pt-4 border-t border-warm-200">
+            <p className="text-sm text-ink-400 mb-2">已采纳的建议</p>
+            <div className="flex flex-wrap gap-2">
+              {planAdjustments.filter(a => a.applied).map(adjustment => (
+                <span
+                  key={adjustment.id}
+                  className="px-3 py-1 bg-green-50 text-green-600 text-xs rounded-full flex items-center gap-1"
+                >
+                  <Check size={12} />
+                  {adjustment.type === 'pomodoro' ? '番茄钟' :
+                   adjustment.type === 'sedentary' ? '久坐提醒' :
+                   adjustment.type === 'water' ? '饮水提醒' :
+                   adjustment.type === 'eye' ? '眼保健操' : '拉伸提醒'}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </motion.div>
     </motion.div>
   );
 };

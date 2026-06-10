@@ -4,6 +4,7 @@ import { useAppStore } from '@/store/useAppStore';
 import { useReminder } from '@/hooks/useReminder';
 import { StatCard } from '@/components/StatCard';
 import { ProgressRing } from '@/components/ProgressRing';
+import { Timeline } from '@/components/Timeline';
 import { formatTime, formatCountdown } from '@/utils/dateUtils';
 import {
   Clock,
@@ -15,6 +16,7 @@ import {
   RefreshCw,
   Activity,
   AlertTriangle,
+  History,
 } from 'lucide-react';
 
 export const TodayStatus: React.FC = () => {
@@ -30,6 +32,8 @@ export const TodayStatus: React.FC = () => {
     incrementBlinkCount,
     saveTodayRecord,
     setCurrentView,
+    getTodayActivities,
+    undoActivity,
   } = useAppStore();
 
   useReminder();
@@ -320,6 +324,30 @@ export const TodayStatus: React.FC = () => {
             </div>
           ))}
         </div>
+      </motion.div>
+
+      <motion.div
+        className="card animate-slide-up mt-6"
+        style={{ animationDelay: '0.8s' }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-primary-100 rounded-lg">
+              <History size={20} className="text-primary-500" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-ink-700">今日时间线</h3>
+              <p className="text-sm text-ink-400">记录你的每一次健康行动</p>
+            </div>
+          </div>
+          <div className="text-xs text-ink-400">
+            共 {getTodayActivities().length} 条记录
+          </div>
+        </div>
+        <Timeline
+          activities={getTodayActivities()}
+          onUndo={undoActivity}
+        />
       </motion.div>
     </motion.div>
   );

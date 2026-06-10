@@ -69,6 +69,9 @@ export const createEmptyDailyRecord = (date: string): DailyRecord => ({
   stretchingMinutes: 0,
   fatigueScore: 0,
   screenDistance: null,
+  activityRecords: [],
+  reminderLogs: [],
+  abnormalReminderCount: 0,
 });
 
 const generateMockRecords = (includeToday: boolean = false): DailyRecord[] => {
@@ -79,6 +82,7 @@ const generateMockRecords = (includeToday: boolean = false): DailyRecord[] => {
     const date = new Date(today);
     date.setDate(date.getDate() - i);
     const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    const abnormalCount = Math.floor(Math.random() * 5);
     records.push({
       date: dateStr,
       sedentaryMinutes: Math.floor(Math.random() * 180) + 120,
@@ -91,13 +95,16 @@ const generateMockRecords = (includeToday: boolean = false): DailyRecord[] => {
       stretchingMinutes: Math.floor(Math.random() * 15) + 5,
       fatigueScore: Math.floor(Math.random() * 5) + 3,
       screenDistance: 'normal',
+      activityRecords: [],
+      reminderLogs: [],
+      abnormalReminderCount: abnormalCount,
     });
   }
   return records;
 };
 
 export const exportToCSV = (records: DailyRecord[]): string => {
-  const headers = ['日期', '久坐时长(分钟)', '休息次数', '饮水量(杯)', '眨眼次数', '眼保健操(分钟)', '拉伸(分钟)', '疲劳评分'];
+  const headers = ['日期', '久坐时长(分钟)', '休息次数', '饮水量(杯)', '眨眼次数', '眼保健操(分钟)', '拉伸(分钟)', '疲劳评分', '异常提醒次数'];
   const rows = records.map(r => [
     r.date,
     r.sedentaryMinutes,
@@ -107,9 +114,37 @@ export const exportToCSV = (records: DailyRecord[]): string => {
     r.eyeExerciseMinutes,
     r.stretchingMinutes,
     r.fatigueScore,
+    r.abnormalReminderCount || 0,
   ]);
-  const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
-  const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  
+  const reminderHeaders = ['日期', '时间', '提醒类型', '标题', '内容', '状态', '压制原因'];
+  const reminderRows: string[][] = [];
+  records.forEach(r => {
+    r.reminderLogs?.forEach(log => {
+      const date = new Date(log.timestamp);
+      const timeStr = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+      reminderRows.push([
+        r.date,
+        timeStr,
+        log.type,
+        `"${log.title}"`,
+        `"${log.body}"`,
+        log.status,
+        log.suppressedReason || '',
+      ]);
+    });
+  });
+  
+  let csvContent = '\ufeff';
+  csvContent += '=== 每日健康数据 ===\n';
+  csvContent += [headers, ...rows].map(row => row.join(',')).join('\n');
+  
+  if (reminderRows.length > 0) {
+    csvContent += '\n\n=== 提醒记录 ===\n';
+    csvContent += [reminderHeaders, ...reminderRows].map(row => row.join(',')).join('\n');
+  }
+  
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
   link.download = `健康数据_${new Date().toISOString().split('T')[0]}.csv`;

@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAppStore } from '@/store/useAppStore';
 import { ToggleSwitch } from '@/components/ToggleSwitch';
+import { ReminderHistory } from '@/components/ReminderHistory';
 import {
   Settings as SettingsIcon,
   Bell,
@@ -13,10 +14,12 @@ import {
   Dumbbell,
   Target,
   Moon,
+  History,
 } from 'lucide-react';
 
 export const Settings: React.FC = () => {
-  const { settings, updateSettings } = useAppStore();
+  const { settings, updateSettings, getTodayReminderLogs } = useAppStore();
+  const [activeTab, setActiveTab] = useState<'settings' | 'history'>('settings');
 
   return (
     <motion.div
@@ -30,7 +33,37 @@ export const Settings: React.FC = () => {
         <p className="text-ink-400">自定义你的健康提醒计划</p>
       </div>
 
-      <div className="space-y-6">
+      <div className="flex gap-2 mb-6">
+        <button
+          onClick={() => setActiveTab('settings')}
+          className={`px-6 py-2.5 rounded-xl font-medium transition-all ${
+            activeTab === 'settings'
+              ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/25'
+              : 'bg-warm-100 text-ink-600 hover:bg-warm-200'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <SettingsIcon size={18} />
+            提醒设置
+          </div>
+        </button>
+        <button
+          onClick={() => setActiveTab('history')}
+          className={`px-6 py-2.5 rounded-xl font-medium transition-all ${
+            activeTab === 'history'
+              ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/25'
+              : 'bg-warm-100 text-ink-600 hover:bg-warm-200'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <History size={18} />
+            提醒历史
+          </div>
+        </button>
+      </div>
+
+      {activeTab === 'settings' && (
+        <div className="space-y-6">
         <motion.div
           className="card animate-slide-up"
           initial={{ opacity: 0, y: 20 }}
@@ -443,23 +476,46 @@ export const Settings: React.FC = () => {
           </div>
         </motion.div>
 
+          <motion.div
+            className="card animate-slide-up"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.6 }}
+          >
+            <h3 className="text-lg font-bold text-ink-700 mb-4">关于</h3>
+            <div className="space-y-2 text-sm text-ink-500">
+              <p>健康管理助手 v1.0.0</p>
+              <p>专为长时间伏案工作的设计师设计</p>
+              <p>帮助你管理坐姿、用眼和休息节奏</p>
+              <p className="text-ink-400 mt-4">
+                数据存储在本地，保护你的隐私安全
+              </p>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {activeTab === 'history' && (
         <motion.div
-          className="card animate-slide-up"
+          key="history"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6 }}
+          className="card"
         >
-          <h3 className="text-lg font-bold text-ink-700 mb-4">关于</h3>
-          <div className="space-y-2 text-sm text-ink-500">
-            <p>健康管理助手 v1.0.0</p>
-            <p>专为长时间伏案工作的设计师设计</p>
-            <p>帮助你管理坐姿、用眼和休息节奏</p>
-            <p className="text-ink-400 mt-4">
-              数据存储在本地，保护你的隐私安全
-            </p>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-primary-100 rounded-lg">
+                <History size={20} className="text-primary-500" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-ink-700">提醒历史</h3>
+                <p className="text-sm text-ink-400">查看所有提醒记录和专注压制情况</p>
+              </div>
+            </div>
           </div>
+          <ReminderHistory logs={getTodayReminderLogs()} />
         </motion.div>
-      </div>
+      )}
     </motion.div>
   );
 };

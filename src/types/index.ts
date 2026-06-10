@@ -1,5 +1,42 @@
 export type ViewType = 'today' | 'rest' | 'posture' | 'eye' | 'stretch' | 'trend' | 'settings';
 
+export type ActivityType = 
+  | 'work_start' 
+  | 'work_pause' 
+  | 'water' 
+  | 'posture_good' 
+  | 'posture_needs_adjustment'
+  | 'rest_start'
+  | 'rest_end'
+  | 'eye_exercise_start'
+  | 'eye_exercise_complete'
+  | 'stretching_start'
+  | 'stretching_complete'
+  | 'pain_record'
+  | 'fatigue_record'
+  | 'screen_distance_record';
+
+export type ReminderType = 'sedentary' | 'water' | 'blink' | 'eye' | 'stretch' | 'pomodoro';
+
+export interface ActivityRecord {
+  id: string;
+  type: ActivityType;
+  timestamp: number;
+  details?: Record<string, unknown>;
+  undoable: boolean;
+  undone?: boolean;
+}
+
+export interface ReminderLog {
+  id: string;
+  type: ReminderType;
+  timestamp: number;
+  title: string;
+  body: string;
+  status: 'shown' | 'suppressed' | 'failed';
+  suppressedReason?: 'focus_mode' | 'outside_work_hours' | 'not_working';
+}
+
 export interface PostureRecord {
   timestamp: number;
   status: 'good' | 'needs_adjustment';
@@ -24,6 +61,19 @@ export interface DailyRecord {
   stretchingMinutes: number;
   fatigueScore: number;
   screenDistance: 'too_close' | 'normal' | 'too_far' | null;
+  activityRecords: ActivityRecord[];
+  reminderLogs: ReminderLog[];
+  abnormalReminderCount: number;
+}
+
+export interface PlanAdjustment {
+  id: string;
+  date: string;
+  type: 'pomodoro' | 'sedentary' | 'water' | 'eye' | 'stretch';
+  currentValue: number;
+  suggestedValue: number;
+  reason: string;
+  applied: boolean;
 }
 
 export interface ReminderSettings {
@@ -46,6 +96,8 @@ export interface AppState {
   todayRecord: DailyRecord;
   settings: ReminderSettings;
   historyRecords: DailyRecord[];
+  planAdjustments: PlanAdjustment[];
+  lastMinuteTick: number;
 }
 
 export interface ExerciseStep {
