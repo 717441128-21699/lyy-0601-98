@@ -18,8 +18,23 @@ import {
 } from 'lucide-react';
 
 export const Settings: React.FC = () => {
-  const { settings, updateSettings, getTodayReminderLogs } = useAppStore();
+  const { settings, updateSettings, getTodayReminderLogs, getReminderLogsByRange, historyRecords, todayRecord } = useAppStore();
   const [activeTab, setActiveTab] = useState<'settings' | 'history'>('settings');
+  const [historyTimeRange, setHistoryTimeRange] = useState<'day' | 'week' | 'month'>('day');
+
+  const handleTimeRangeChange = (range: 'day' | 'week' | 'month') => {
+    setHistoryTimeRange(range);
+  };
+
+  const getLogsForRange = () => {
+    if (historyTimeRange === 'day') {
+      return getTodayReminderLogs();
+    }
+    const daysBack = historyTimeRange === 'week' ? 6 : 29;
+    return getReminderLogsByRange(daysBack);
+  };
+
+  const allRecords = [...historyRecords, todayRecord];
 
   return (
     <motion.div
@@ -513,7 +528,12 @@ export const Settings: React.FC = () => {
               </div>
             </div>
           </div>
-          <ReminderHistory logs={getTodayReminderLogs()} />
+          <ReminderHistory 
+            logs={getLogsForRange()} 
+            allRecords={allRecords}
+            timeRange={historyTimeRange}
+            onTimeRangeChange={handleTimeRangeChange}
+          />
         </motion.div>
       )}
     </motion.div>

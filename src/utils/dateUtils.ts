@@ -28,6 +28,27 @@ export const getLast7Days = (): string[] => {
   return days;
 };
 
+export const formatDuration = (startTimestamp: number, endTimestamp: number): string => {
+  const diffMs = endTimestamp - startTimestamp;
+  const diffSeconds = Math.floor(diffMs / 1000);
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  const remainingSeconds = diffSeconds % 60;
+  
+  if (diffMinutes > 60) {
+    const hours = Math.floor(diffMinutes / 60);
+    const mins = diffMinutes % 60;
+    return `${hours}小时${mins}分钟`;
+  } else if (diffMinutes > 0) {
+    return `${diffMinutes}分${remainingSeconds}秒`;
+  }
+  return `${remainingSeconds}秒`;
+};
+
+export const formatTimeOfDay = (timestamp: number): string => {
+  const date = new Date(timestamp);
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+};
+
 export const isInTimeRange = (start: string, end: string): boolean => {
   const now = new Date();
   const currentMinutes = now.getHours() * 60 + now.getMinutes();

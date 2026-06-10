@@ -1,5 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
+import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
+import { Bar } from 'react-chartjs-2';
 import {
   Bell,
   Eye,
@@ -11,12 +13,19 @@ import {
   CheckCircle,
   XCircle,
   Filter,
+  Download,
 } from 'lucide-react';
-import type { ReminderLog, ReminderType } from '@/types';
+import type { ReminderLog, ReminderType, DailyRecord } from '@/types';
 import { formatTime } from '@/utils/dateUtils';
+import { exportToCSV } from '@/utils/storage';
+
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
 interface ReminderHistoryProps {
   logs: ReminderLog[];
+  allRecords?: DailyRecord[];
+  timeRange?: 'day' | 'week' | 'month';
+  onTimeRangeChange?: (range: 'day' | 'week' | 'month') => void;
 }
 
 const typeConfig: Record<ReminderType, { icon: React.ElementType; label: string; color: string }> = {
@@ -37,9 +46,20 @@ const statusConfig = {
 const allTypes: (ReminderType | 'all')[] = ['all', 'sedentary', 'water', 'blink', 'eye', 'stretch', 'pomodoro'];
 const allStatuses: ('all' | 'shown' | 'suppressed' | 'failed')[] = ['all', 'shown', 'suppressed', 'failed'];
 
-export const ReminderHistory: React.FC<ReminderHistoryProps> = ({ logs }) => {
+export const ReminderHistory: React.FC<ReminderHistoryProps> = ({ 
+  logs, 
+  allRecords = [], 
+  timeRange = 'day', 
+  onTimeRangeChange 
+}) => {
   const [typeFilter, setTypeFilter] = useState<ReminderType | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'shown' | 'suppressed' | 'failed'>('all');
+  const [localTimeRange, setLocalTimeRange] = useState<'day' | 'week' | 'month'>(timeRange);
+
+  const handleTimeRangeChange = (range: 'day' | 'week' | 'month') => {
+    setLocalTimeRange(range);
+    onTimeRangeChange?.(range);
+  };
 
   const filteredLogs = useMemo(() => {
     return logs.filter(log => {
@@ -50,11 +70,88 @@ export const ReminderHistory: React.FC<ReminderHistoryProps> = ({ logs }) => {
   }, [logs, typeFilter, statusFilter]);
 
   const stats = useMemo(() => {
-    const shown = logs.filter(l => l.status === 'shown').length;
-    const suppressed = logs.filter(l => l.status === 'suppressed').length;
-    const focusSuppressed = logs.filter(l => l.suppressedReason === 'focus_mode').length;
-    return { shown, suppressed, focusSuppressed, total: logs.length };
-  }, [logs]);
+    const shown = filteredLogs.filter(l => l.status === 'shown').length;
+    const suppressed = filteredLogs.filter(l => l.status === 'suppressed').length;
+    const focusSuppressed = filteredLogs.filter(l => l.suppressedReason === 'focus_mode').length;
+    return { shown, suppressed, focusSuppressed, total: filteredLogs.length, allTotal: logs.length };
+  }, [filteredLogs, logs]);
+
+  const chartData = useMemo(() => {
+    const types: ReminderType[] = ['sedentary', 'water', 'blink', 'eye', 'stretch', 'pomodoro'];
+    const labels = types.map(t => typeConfig[t].label);
+    const shownData = types.map(t => filteredLogs.filter(l => l.type === t && l.status === 'shown').length);
+    const suppressedData = types.map(t => filteredLogs.filter(l => l.type === t && l.status === 'suppressed').length);
+
+    return {
+      labels,
+      datasets: [
+        {
+          label: '已弹出',
+          data: shownData,
+          backgroundColor: 'rgba(78, 205, 196, 0.8)',
+          borderRadius: 8,
+        },
+        {
+          label: '已压制',
+          data: suppressedData,
+          backgroundColor: 'rgba(255, 107, 107, 0.8)',
+          borderRadius: 8,
+        },
+      ],
+    };
+  }, [filteredLogs]);
+
+  const chartOptions = {
+    responsive: true,
+    plugins: {
+      legend: {
+        display: true,
+        position: 'top' as const,
+      },
+      title: {
+        display: true,
+        text: '提醒类型分布',
+        color: '#374151',
+        font: {
+          size: 14,
+          weight: 'bold' as const,
+        },
+      },
+    },
+    scales: {
+      x: {
+        grid: {
+          display: false,
+        },
+        ticks: {
+          color: '#ABB8C3',
+          font: {
+            size: 11,
+          },
+        },
+      },
+      y: {
+        grid: {
+          color: '#EAEDEF',
+        },
+        ticks: {
+          color: '#ABB8C3',
+          stepSize: 1,
+        },
+        beginAtZero: true,
+      },
+    },
+  };
+
+  const daysBack = localTimeRange === 'day' ? 0 : localTimeRange === 'week' ? 6 : 29;
+
+  const handleExport = () => {
+    exportToCSV(allRecords, {
+      typeFilter,
+      statusFilter,
+      daysBack,
+    });
+  };
 
   if (logs.length === 0) {
     return (
@@ -68,6 +165,28 @@ export const ReminderHistory: React.FC<ReminderHistoryProps> = ({ logs }) => {
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex bg-warm-100 rounded-lg p-1">
+          {(['day', 'week', 'month'] as const).map(range => (
+            <button
+              key={range}
+              onClick={() => handleTimeRangeChange(range)}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                localTimeRange === range
+                  ? 'bg-white text-primary-600 shadow-sm'
+                  : 'text-ink-500 hover:text-ink-700'
+              }`}
+            >
+              {range === 'day' ? '今日' : range === 'week' ? '本周' : '本月'}
+            </button>
+          ))}
+        </div>
+        <div className="text-sm text-ink-400">
+          共 {stats.allTotal} 条记录
+          {stats.total !== stats.allTotal && ` (筛选后 ${stats.total} 条)`}
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="p-3 bg-ink-50 rounded-xl text-center">
           <p className="text-2xl font-bold text-ink-700">{stats.total}</p>
@@ -84,6 +203,12 @@ export const ReminderHistory: React.FC<ReminderHistoryProps> = ({ logs }) => {
         <div className="p-3 bg-purple-50 rounded-xl text-center">
           <p className="text-2xl font-bold text-purple-600">{stats.focusSuppressed}</p>
           <p className="text-xs text-purple-600">专注模式压制</p>
+        </div>
+      </div>
+
+      <div className="card p-4">
+        <div className="h-48">
+          <Bar data={chartData} options={chartOptions} />
         </div>
       </div>
 
@@ -107,6 +232,13 @@ export const ReminderHistory: React.FC<ReminderHistoryProps> = ({ logs }) => {
             ))}
           </div>
         </div>
+        <button
+          onClick={handleExport}
+          className="btn-secondary btn-sm flex items-center gap-2 ml-auto"
+        >
+          <Download size={14} />
+          导出筛选结果
+        </button>
       </div>
 
       <div className="flex flex-wrap gap-3 items-center">

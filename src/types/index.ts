@@ -25,6 +25,7 @@ export interface ActivityRecord {
   details?: Record<string, unknown>;
   undoable: boolean;
   undone?: boolean;
+  groupId?: string;
 }
 
 export interface ReminderLog {
@@ -70,10 +71,14 @@ export interface PlanAdjustment {
   id: string;
   date: string;
   type: 'pomodoro' | 'sedentary' | 'water' | 'eye' | 'stretch';
+  field: 'workMinutes' | 'restMinutes' | 'thresholdMinutes' | 'intervalMinutes' | 'intervalHours';
   currentValue: number;
   suggestedValue: number;
   reason: string;
-  applied: boolean;
+  status: 'pending' | 'applied' | 'dismissed';
+  appliedAt?: number;
+  dismissedAt?: number;
+  appliedSettings?: Partial<ReminderSettings>;
 }
 
 export interface ReminderSettings {
@@ -98,6 +103,7 @@ export interface AppState {
   historyRecords: DailyRecord[];
   planAdjustments: PlanAdjustment[];
   lastMinuteTick: number;
+  lastNotificationTick: Record<ReminderType, number>;
 }
 
 export interface ExerciseStep {

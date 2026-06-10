@@ -10,7 +10,7 @@ interface PomodoroState {
 }
 
 export const usePomodoroTimer = () => {
-  const { settings, startWorking, stopWorking, incrementRestCount, addStretchingMinutes } = useAppStore();
+  const { settings, startWorking, stopWorking, incrementRestCount, addStretchingMinutes, addActivity } = useAppStore();
   
   const [state, setState] = useState<PomodoroState>({
     isRunning: false,
@@ -21,18 +21,26 @@ export const usePomodoroTimer = () => {
   });
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const restGroupIdRef = useRef<string | null>(null);
 
   const tick = useCallback(() => {
     setState(prev => {
       if (prev.remainingSeconds <= 1) {
         if (prev.isWorkPhase) {
+          const groupId = `rest-${Date.now()}`;
+          restGroupIdRef.current = groupId;
           incrementRestCount();
+          addActivity('rest_start', { minutes: settings.pomodoro.restMinutes }, true, groupId);
           return {
             ...prev,
             isWorkPhase: false,
             remainingSeconds: settings.pomodoro.restMinutes * 60,
           };
         } else {
+          if (restGroupIdRef.current) {
+            addActivity('rest_end', { minutes: settings.pomodoro.restMinutes }, true, restGroupIdRef.current);
+            restGroupIdRef.current = null;
+          }
           addStretchingMinutes(Math.floor(settings.pomodoro.restMinutes / 2));
           return {
             ...prev,
@@ -44,7 +52,33 @@ export const usePomodoroTimer = () => {
       }
       return { ...prev, remainingSeconds: prev.remainingSeconds - 1 };
     });
-  }, [settings.pomodoro, incrementRestCount, addStretchingMinutes]);
+  }, [settings.pomodoro, incrementRestCount, addStretchingMinutes, addActivity]);
+
+  const skipPhase = useCallback(() => {
+    if (state.isWorkPhase) {
+      const groupId = `rest-${Date.now()}`;
+      restGroupIdRef.current = groupId;
+      incrementRestCount();
+      addActivity('rest_start', { minutes: settings.pomodoro.restMinutes, skipped: true }, true, groupId);
+      setState(prev => ({
+        ...prev,
+        isWorkPhase: false,
+        remainingSeconds: settings.pomodoro.restMinutes * 60,
+      }));
+    } else {
+      if (restGroupIdRef.current) {
+        addActivity('rest_end', { minutes: settings.pomodoro.restMinutes, skipped: true }, true, restGroupIdRef.current);
+        restGroupIdRef.current = null;
+      }
+      addStretchingMinutes(Math.floor(settings.pomodoro.restMinutes / 2));
+      setState(prev => ({
+        ...prev,
+        isWorkPhase: true,
+        remainingSeconds: settings.pomodoro.workMinutes * 60,
+        completedCycles: prev.completedCycles + 1,
+      }));
+    }
+  }, [state.isWorkPhase, settings.pomodoro, incrementRestCount, addStretchingMinutes, addActivity]);
 
   const start = useCallback(() => {
     setState(prev => ({
@@ -73,25 +107,6 @@ export const usePomodoroTimer = () => {
     });
     stopWorking();
   }, [settings.pomodoro.workMinutes, stopWorking]);
-
-  const skipPhase = useCallback(() => {
-    if (state.isWorkPhase) {
-      incrementRestCount();
-      setState(prev => ({
-        ...prev,
-        isWorkPhase: false,
-        remainingSeconds: settings.pomodoro.restMinutes * 60,
-      }));
-    } else {
-      addStretchingMinutes(Math.floor(settings.pomodoro.restMinutes / 2));
-      setState(prev => ({
-        ...prev,
-        isWorkPhase: true,
-        remainingSeconds: settings.pomodoro.workMinutes * 60,
-        completedCycles: prev.completedCycles + 1,
-      }));
-    }
-  }, [state.isWorkPhase, settings.pomodoro, incrementRestCount, addStretchingMinutes]);
 
   useEffect(() => {
     if (state.isRunning && !state.isPaused) {

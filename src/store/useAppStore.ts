@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { AppState, ViewType, DailyRecord, ReminderSettings, PainRecord, PostureRecord, ActivityRecord, ReminderLog, ActivityType, ReminderType, PlanAdjustment } from '@/types';
-import { loadSettings, saveSettings, loadDailyRecords, saveDailyRecords, createEmptyDailyRecord } from '@/utils/storage';
+import { loadSettings, saveSettings, loadDailyRecords, saveDailyRecords, createEmptyDailyRecord, loadPlanAdjustments, savePlanAdjustments, getReminderLogsByDateRange } from '@/utils/storage';
 import { getTodayString } from '@/utils/dateUtils';
 
 const generateId = () => `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -23,15 +23,19 @@ interface AppStore extends AppState {
   incrementAbnormalCount: () => void;
   resetAbnormalCount: () => void;
   saveTodayRecord: () => void;
-  addActivity: (type: ActivityType, details?: Record<string, unknown>, undoable?: boolean) => void;
+  addActivity: (type: ActivityType, details?: Record<string, unknown>, undoable?: boolean, groupId?: string) => string;
   undoActivity: (activityId: string) => void;
   addReminderLog: (type: ReminderType, title: string, body: string, status: ReminderLog['status'], suppressedReason?: ReminderLog['suppressedReason']) => void;
-  addPlanAdjustment: (adjustment: Omit<PlanAdjustment, 'id' | 'date' | 'applied'>) => void;
+  addPlanAdjustment: (adjustment: Omit<PlanAdjustment, 'id' | 'date' | 'status'>) => void;
   applyPlanAdjustment: (adjustmentId: string) => void;
   dismissPlanAdjustment: (adjustmentId: string) => void;
+  restoreDismissedAdjustment: (adjustmentId: string) => void;
   generatePlanSuggestions: () => PlanAdjustment[];
   getTodayActivities: () => ActivityRecord[];
   getTodayReminderLogs: () => ReminderLog[];
+  getReminderLogsByRange: (daysBack: number) => ReminderLog[];
+  savePlanAdjustments: () => void;
+  checkNotificationThrottle: (type: ReminderType) => boolean;
 }
 
 const initializeTodayRecord = (): DailyRecord => {
@@ -58,8 +62,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
   todayRecord: initializeTodayRecord(),
   settings: loadSettings(),
   historyRecords: initializeHistoryRecords(),
-  planAdjustments: [],
+  planAdjustments: loadPlanAdjustments(),
   lastMinuteTick: Math.floor(Date.now() / 60000),
+  lastNotificationTick: {
+    sedentary: 0,
+    water: 0,
+    blink: 0,
+    eye: 0,
+    stretch: 0,
+    pomodoro: 0,
+  },
 
   setCurrentView: (view) => set({ currentView: view }),
 
@@ -222,22 +234,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({ historyRecords: newHistoryRecords });
   },
 
-  addActivity: (type, details, undoable = false) => set((state) => {
+  addActivity: (type, details, undoable = false, groupId) => {
+    const recordId = generateId();
     const record: ActivityRecord = {
-      id: generateId(),
+      id: recordId,
       type,
       timestamp: Date.now(),
       details,
       undoable,
       undone: false,
+      groupId,
     };
-    return {
+    set((state) => ({
       todayRecord: {
         ...state.todayRecord,
         activityRecords: [...state.todayRecord.activityRecords, record],
       },
-    };
-  }),
+    }));
+    return recordId;
+  },
 
   undoActivity: (activityId) => set((state) => {
     const activity = state.todayRecord.activityRecords.find(a => a.id === activityId);
@@ -246,6 +261,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
 
     let updates: Partial<typeof state.todayRecord> = {};
+    const activityIdsToUndo: string[] = [activityId];
+
+    if (activity.groupId) {
+      state.todayRecord.activityRecords.forEach(a => {
+        if (a.groupId === activity.groupId && a.id !== activityId && !a.undone) {
+          activityIdsToUndo.push(a.id);
+          if (a.type === 'rest_end') {
+            updates.restCount = Math.max(0, state.todayRecord.restCount - 1);
+          } else if (a.type === 'eye_exercise_complete') {
+            const minutes = (a.details?.minutes as number) || 0;
+            updates.eyeExerciseMinutes = Math.max(0, state.todayRecord.eyeExerciseMinutes - minutes);
+          } else if (a.type === 'stretching_complete') {
+            const minutes = (a.details?.minutes as number) || 0;
+            updates.stretchingMinutes = Math.max(0, state.todayRecord.stretchingMinutes - minutes);
+          }
+        }
+      });
+    }
+
     switch (activity.type) {
       case 'water':
         updates.waterIntake = Math.max(0, state.todayRecord.waterIntake - 1);
@@ -263,6 +297,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
       case 'fatigue_record':
         updates.fatigueScore = 0;
         break;
+      case 'rest_start':
+        if (!activity.groupId) {
+          updates.restCount = Math.max(0, state.todayRecord.restCount - 1);
+        }
+        break;
+      case 'eye_exercise_start':
+        if (!activity.groupId) {
+          const minutes = (activity.details?.minutes as number) || 0;
+          updates.eyeExerciseMinutes = Math.max(0, state.todayRecord.eyeExerciseMinutes - minutes);
+        }
+        break;
+      case 'stretching_start':
+        if (!activity.groupId) {
+          const minutes = (activity.details?.minutes as number) || 0;
+          updates.stretchingMinutes = Math.max(0, state.todayRecord.stretchingMinutes - minutes);
+        }
+        break;
     }
 
     return {
@@ -270,7 +321,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         ...state.todayRecord,
         ...updates,
         activityRecords: state.todayRecord.activityRecords.map(a =>
-          a.id === activityId ? { ...a, undone: true } : a
+          activityIdsToUndo.includes(a.id) ? { ...a, undone: true } : a
         ),
       },
     };
@@ -299,26 +350,33 @@ export const useAppStore = create<AppStore>((set, get) => ({
       ...adjustment,
       id: generateId(),
       date: getTodayString(),
-      applied: false,
+      status: 'pending',
     };
-    return {
-      planAdjustments: [...state.planAdjustments, newAdjustment],
-    };
+    const updated = [...state.planAdjustments, newAdjustment];
+    savePlanAdjustments(updated);
+    return { planAdjustments: updated };
   }),
 
   applyPlanAdjustment: (adjustmentId) => set((state) => {
     const adjustment = state.planAdjustments.find(a => a.id === adjustmentId);
-    if (!adjustment || adjustment.applied) {
+    if (!adjustment || adjustment.status !== 'pending') {
       return {};
     }
 
     let settingsUpdate: Partial<ReminderSettings> = {};
     switch (adjustment.type) {
       case 'pomodoro':
-        settingsUpdate.pomodoro = {
-          ...state.settings.pomodoro,
-          workMinutes: adjustment.suggestedValue,
-        };
+        if (adjustment.field === 'workMinutes') {
+          settingsUpdate.pomodoro = {
+            ...state.settings.pomodoro,
+            workMinutes: adjustment.suggestedValue,
+          };
+        } else {
+          settingsUpdate.pomodoro = {
+            ...state.settings.pomodoro,
+            restMinutes: adjustment.suggestedValue,
+          };
+        }
         break;
       case 'sedentary':
         settingsUpdate.sedentary = {
@@ -349,26 +407,51 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const updatedSettings = { ...state.settings, ...settingsUpdate };
     saveSettings(updatedSettings);
 
+    const updatedAdjustments = state.planAdjustments.map(a =>
+      a.id === adjustmentId
+        ? { ...a, status: 'applied' as const, appliedAt: Date.now(), appliedSettings: settingsUpdate }
+        : a
+    );
+    savePlanAdjustments(updatedAdjustments);
+
     return {
       settings: updatedSettings,
-      planAdjustments: state.planAdjustments.map(a =>
-        a.id === adjustmentId ? { ...a, applied: true } : a
-      ),
+      planAdjustments: updatedAdjustments,
     };
   }),
 
-  dismissPlanAdjustment: (adjustmentId) => set((state) => ({
-    planAdjustments: state.planAdjustments.filter(a => a.id !== adjustmentId),
-  })),
+  dismissPlanAdjustment: (adjustmentId) => set((state) => {
+    const updatedAdjustments = state.planAdjustments.map(a =>
+      a.id === adjustmentId
+        ? { ...a, status: 'dismissed' as const, dismissedAt: Date.now() }
+        : a
+    );
+    savePlanAdjustments(updatedAdjustments);
+    return { planAdjustments: updatedAdjustments };
+  }),
+
+  restoreDismissedAdjustment: (adjustmentId) => set((state) => {
+    const updatedAdjustments = state.planAdjustments.map(a =>
+      a.id === adjustmentId
+        ? { ...a, status: 'pending' as const, dismissedAt: undefined }
+        : a
+    );
+    savePlanAdjustments(updatedAdjustments);
+    return { planAdjustments: updatedAdjustments };
+  }),
 
   generatePlanSuggestions: () => {
     const state = get();
-    const suggestions: PlanAdjustment[] = [];
+    const newSuggestions: PlanAdjustment[] = [];
     const recentRecords = state.historyRecords.slice(-7);
 
     if (recentRecords.length === 0) {
-      return suggestions;
+      return state.planAdjustments;
     }
+
+    const existingPending = state.planAdjustments.filter(a => a.status === 'pending');
+    const hasPending = (type: string, field: string) =>
+      existingPending.some(a => a.type === type && a.field === field);
 
     const avgSedentary = recentRecords.reduce((sum, r) => sum + r.sedentaryMinutes, 0) / recentRecords.length;
     const avgFatigue = recentRecords.reduce((sum, r) => sum + r.fatigueScore, 0) / recentRecords.length;
@@ -377,80 +460,88 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const avgEye = recentRecords.reduce((sum, r) => sum + r.eyeExerciseMinutes, 0) / recentRecords.length;
     const avgStretch = recentRecords.reduce((sum, r) => sum + r.stretchingMinutes, 0) / recentRecords.length;
 
-    if (avgSedentary > 180) {
-      suggestions.push({
+    if (avgSedentary > 180 && !hasPending('sedentary', 'thresholdMinutes')) {
+      newSuggestions.push({
         id: generateId(),
         date: getTodayString(),
         type: 'sedentary',
+        field: 'thresholdMinutes',
         currentValue: state.settings.sedentary.thresholdMinutes,
         suggestedValue: Math.max(25, state.settings.sedentary.thresholdMinutes - 10),
         reason: `平均每日久坐 ${Math.round(avgSedentary)} 分钟，建议缩短久坐提醒阈值`,
-        applied: false,
+        status: 'pending',
       });
     }
 
-    if (avgAbnormal > 2) {
-      suggestions.push({
+    if (avgAbnormal > 2 && !hasPending('pomodoro', 'workMinutes')) {
+      newSuggestions.push({
         id: generateId(),
         date: getTodayString(),
         type: 'pomodoro',
+        field: 'workMinutes',
         currentValue: state.settings.pomodoro.workMinutes,
         suggestedValue: Math.max(20, state.settings.pomodoro.workMinutes - 5),
         reason: `本周平均异常提醒 ${avgAbnormal.toFixed(1)} 次，建议缩短番茄钟工作时长`,
-        applied: false,
+        status: 'pending',
       });
     }
 
-    if (avgWater < 5) {
-      suggestions.push({
+    if (avgWater < 5 && !hasPending('water', 'intervalMinutes')) {
+      newSuggestions.push({
         id: generateId(),
         date: getTodayString(),
         type: 'water',
+        field: 'intervalMinutes',
         currentValue: state.settings.water.intervalMinutes,
         suggestedValue: Math.max(30, state.settings.water.intervalMinutes - 15),
         reason: `平均每日饮水 ${avgWater.toFixed(1)} 杯，建议增加饮水提醒频率`,
-        applied: false,
+        status: 'pending',
       });
     }
 
-    if (avgEye < 10) {
-      suggestions.push({
+    if (avgEye < 10 && !hasPending('eye', 'intervalHours')) {
+      newSuggestions.push({
         id: generateId(),
         date: getTodayString(),
         type: 'eye',
+        field: 'intervalHours',
         currentValue: state.settings.eyeExercise.intervalHours,
         suggestedValue: Math.max(1, state.settings.eyeExercise.intervalHours - 1),
         reason: `平均每日眼保健操 ${avgEye.toFixed(1)} 分钟，建议增加眼保健操频率`,
-        applied: false,
+        status: 'pending',
       });
     }
 
-    if (avgStretch < 15) {
-      suggestions.push({
+    if (avgStretch < 15 && !hasPending('stretch', 'intervalHours')) {
+      newSuggestions.push({
         id: generateId(),
         date: getTodayString(),
         type: 'stretch',
+        field: 'intervalHours',
         currentValue: state.settings.stretching.intervalHours,
         suggestedValue: Math.max(1, state.settings.stretching.intervalHours - 1),
         reason: `平均每日拉伸 ${avgStretch.toFixed(1)} 分钟，建议增加拉伸频率`,
-        applied: false,
+        status: 'pending',
       });
     }
 
-    if (avgFatigue > 6) {
-      suggestions.push({
+    if (avgFatigue > 6 && !hasPending('pomodoro', 'restMinutes')) {
+      newSuggestions.push({
         id: generateId(),
         date: getTodayString(),
         type: 'pomodoro',
+        field: 'restMinutes',
         currentValue: state.settings.pomodoro.restMinutes,
         suggestedValue: Math.min(10, state.settings.pomodoro.restMinutes + 2),
         reason: `平均疲劳评分 ${avgFatigue.toFixed(1)}，建议延长休息时长`,
-        applied: false,
+        status: 'pending',
       });
     }
 
-    state.planAdjustments = suggestions;
-    return suggestions;
+    const allAdjustments = [...state.planAdjustments, ...newSuggestions];
+    savePlanAdjustments(allAdjustments);
+    set({ planAdjustments: allAdjustments });
+    return allAdjustments;
   },
 
   getTodayActivities: () => {
@@ -461,5 +552,34 @@ export const useAppStore = create<AppStore>((set, get) => ({
   getTodayReminderLogs: () => {
     const state = get();
     return [...state.todayRecord.reminderLogs].sort((a, b) => b.timestamp - a.timestamp);
+  },
+
+  getReminderLogsByRange: (daysBack) => {
+    const state = get();
+    return getReminderLogsByDateRange([...state.historyRecords, state.todayRecord], daysBack);
+  },
+
+  savePlanAdjustments: () => {
+    const state = get();
+    savePlanAdjustments(state.planAdjustments);
+  },
+
+  checkNotificationThrottle: (type) => {
+    const now = Date.now();
+    const state = get();
+    const lastTick = state.lastNotificationTick[type] || 0;
+    const minInterval = 60 * 1000;
+
+    if (now - lastTick < minInterval) {
+      return false;
+    }
+
+    set((state) => ({
+      lastNotificationTick: {
+        ...state.lastNotificationTick,
+        [type]: now,
+      },
+    }));
+    return true;
   },
 }));

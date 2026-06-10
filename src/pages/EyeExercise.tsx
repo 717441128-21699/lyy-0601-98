@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '@/store/useAppStore';
 import { useCountdownTimer } from '@/hooks/useTimer';
@@ -19,10 +19,11 @@ import {
 } from 'lucide-react';
 
 export const EyeExercise: React.FC = () => {
-  const { settings, updateSettings, addEyeExerciseMinutes, todayRecord } = useAppStore();
+  const { settings, updateSettings, addEyeExerciseMinutes, todayRecord, addActivity } = useAppStore();
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isStarted, setIsStarted] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const exerciseGroupIdRef = useRef<string | null>(null);
 
   const currentStep = eyeExerciseSteps[currentStepIndex];
   const totalDuration = eyeExerciseSteps.reduce((sum, s) => sum + s.duration, 0);
@@ -32,31 +33,37 @@ export const EyeExercise: React.FC = () => {
       const nextIndex = currentStepIndex + 1;
       const nextDuration = eyeExerciseSteps[nextIndex].duration;
       setCurrentStepIndex(nextIndex);
+      setTimeout(() => {
+        timer.resetWithNewDuration(nextDuration, true);
+      }, 100);
     } else {
-      addEyeExerciseMinutes(Math.ceil(totalDuration / 60));
+      const minutes = Math.ceil(totalDuration / 60);
+      addEyeExerciseMinutes(minutes);
+      if (exerciseGroupIdRef.current) {
+        addActivity('eye_exercise_complete', { minutes, steps: eyeExerciseSteps.length }, true, exerciseGroupIdRef.current);
+        exerciseGroupIdRef.current = null;
+      }
       setIsStarted(false);
     }
-  }, [currentStepIndex, totalDuration, addEyeExerciseMinutes]);
+  }, [currentStepIndex, totalDuration, addEyeExerciseMinutes, addActivity]);
 
   const timer = useCountdownTimer(currentStep?.duration || 0, handleComplete);
 
   React.useEffect(() => {
-    if (isStarted && timer.seconds === 0 && currentStepIndex < eyeExerciseSteps.length - 1) {
-      const nextDuration = eyeExerciseSteps[currentStepIndex + 1]?.duration || 0;
-      if (nextDuration > 0) {
-        setTimeout(() => {
-          timer.resetWithNewDuration(nextDuration, true);
-        }, 100);
-      }
+    if (isStarted && currentStep) {
+      timer.resetWithNewDuration(currentStep.duration, timer.isActive);
     }
-  }, [currentStepIndex, isStarted, timer]);
+  }, [currentStepIndex]);
 
   const progress = ((currentStep.duration - timer.seconds) / currentStep.duration) * 100;
   const overallProgress = ((currentStepIndex * currentStep.duration + (currentStep.duration - timer.seconds)) / totalDuration) * 100;
 
   const startExercise = () => {
+    const groupId = `eye-${Date.now()}`;
+    exerciseGroupIdRef.current = groupId;
+    addActivity('eye_exercise_start', { totalSteps: eyeExerciseSteps.length, totalDuration }, true, groupId);
     setIsStarted(true);
-    timer.start();
+    timer.resetWithNewDuration(currentStep.duration, true);
   };
 
   const pauseExercise = () => {

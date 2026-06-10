@@ -1,8 +1,9 @@
-import { DailyRecord, ReminderSettings } from '@/types';
+import { DailyRecord, ReminderSettings, PlanAdjustment, ReminderLog, ReminderType } from '@/types';
 
 const STORAGE_KEYS = {
   DAILY_RECORDS: 'health_manager_daily_records',
   SETTINGS: 'health_manager_settings',
+  PLAN_ADJUSTMENTS: 'health_manager_plan_adjustments',
 };
 
 export const loadSettings = (): ReminderSettings => {
@@ -43,6 +44,48 @@ export const saveDailyRecords = (records: DailyRecord[]): void => {
   } catch (e) {
     console.error('Failed to save records:', e);
   }
+};
+
+export const loadPlanAdjustments = (): PlanAdjustment[] => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEYS.PLAN_ADJUSTMENTS);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.error('Failed to load plan adjustments:', e);
+  }
+  return [];
+};
+
+export const savePlanAdjustments = (adjustments: PlanAdjustment[]): void => {
+  try {
+    localStorage.setItem(STORAGE_KEYS.PLAN_ADJUSTMENTS, JSON.stringify(adjustments));
+  } catch (e) {
+    console.error('Failed to save plan adjustments:', e);
+  }
+};
+
+export const getReminderLogsByDateRange = (
+  records: DailyRecord[],
+  daysBack: number
+): ReminderLog[] => {
+  const logs: ReminderLog[] = [];
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - daysBack);
+  const cutoffTime = cutoffDate.getTime();
+
+  records.forEach(record => {
+    if (record.reminderLogs) {
+      record.reminderLogs.forEach(log => {
+        if (log.timestamp >= cutoffTime) {
+          logs.push(log);
+        }
+      });
+    }
+  });
+
+  return logs.sort((a, b) => b.timestamp - a.timestamp);
 };
 
 export const getDefaultSettings = (): ReminderSettings => ({
@@ -103,7 +146,14 @@ const generateMockRecords = (includeToday: boolean = false): DailyRecord[] => {
   return records;
 };
 
-export const exportToCSV = (records: DailyRecord[]): string => {
+export const exportToCSV = (
+  records: DailyRecord[],
+  filterOptions?: {
+    typeFilter?: ReminderType | 'all';
+    statusFilter?: 'all' | 'shown' | 'suppressed' | 'failed';
+    daysBack?: number;
+  }
+): string => {
   const headers = ['日期', '久坐时长(分钟)', '休息次数', '饮水量(杯)', '眨眼次数', '眼保健操(分钟)', '拉伸(分钟)', '疲劳评分', '异常提醒次数'];
   const rows = records.map(r => [
     r.date,
@@ -119,8 +169,21 @@ export const exportToCSV = (records: DailyRecord[]): string => {
   
   const reminderHeaders = ['日期', '时间', '提醒类型', '标题', '内容', '状态', '压制原因'];
   const reminderRows: string[][] = [];
+  
+  const cutoffTime = filterOptions?.daysBack
+    ? (() => {
+        const d = new Date();
+        d.setDate(d.getDate() - filterOptions.daysBack!);
+        return d.getTime();
+      })()
+    : 0;
+  
   records.forEach(r => {
     r.reminderLogs?.forEach(log => {
+      if (cutoffTime > 0 && log.timestamp < cutoffTime) return;
+      if (filterOptions?.typeFilter && filterOptions.typeFilter !== 'all' && log.type !== filterOptions.typeFilter) return;
+      if (filterOptions?.statusFilter && filterOptions.statusFilter !== 'all' && log.status !== filterOptions.statusFilter) return;
+      
       const date = new Date(log.timestamp);
       const timeStr = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
       reminderRows.push([
@@ -141,6 +204,9 @@ export const exportToCSV = (records: DailyRecord[]): string => {
   
   if (reminderRows.length > 0) {
     csvContent += '\n\n=== 提醒记录 ===\n';
+    if (filterOptions) {
+      csvContent += `筛选条件: 类型=${filterOptions.typeFilter || 'all'}, 状态=${filterOptions.statusFilter || 'all'}, 最近${filterOptions.daysBack || '全部'}天\n`;
+    }
     csvContent += [reminderHeaders, ...reminderRows].map(row => row.join(',')).join('\n');
   }
   

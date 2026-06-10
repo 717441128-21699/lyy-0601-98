@@ -34,6 +34,9 @@ import {
   Brain,
   Heart,
   ChevronRight,
+  Clock,
+  RotateCcw,
+  Settings as SettingsIcon,
 } from 'lucide-react';
 
 ChartJS.register(
@@ -69,10 +72,12 @@ export const TrendReport: React.FC = () => {
     generatePlanSuggestions,
     applyPlanAdjustment,
     dismissPlanAdjustment,
+    restoreDismissedAdjustment,
   } = useAppStore();
   const [activeChart, setActiveChart] = useState<'sedentary' | 'water' | 'exercise'>('sedentary');
   const [timeRange, setTimeRange] = useState<'week' | 'month'>('week');
   const [showAdjustments, setShowAdjustments] = useState(false);
+  const [planTab, setPlanTab] = useState<'pending' | 'applied' | 'dismissed'>('pending');
 
   useEffect(() => {
     generatePlanSuggestions();
@@ -371,6 +376,73 @@ export const TrendReport: React.FC = () => {
     }
 
     updateSettings(newSettings);
+  };
+
+  const typeLabels: Record<PlanAdjustment['type'], string> = {
+    pomodoro: '番茄钟',
+    sedentary: '久坐提醒',
+    water: '饮水提醒',
+    eye: '眼保健操',
+    stretch: '拉伸提醒',
+  };
+
+  const fieldLabels: Record<PlanAdjustment['field'], string> = {
+    workMinutes: '工作时长',
+    restMinutes: '休息时长',
+    thresholdMinutes: '提醒阈值',
+    intervalMinutes: '提醒间隔',
+    intervalHours: '提醒间隔',
+  };
+
+  const formatValue = (type: PlanAdjustment['type'], field: PlanAdjustment['field'], value: number) => {
+    if (field === 'intervalHours') {
+      return `${value}小时`;
+    }
+    return `${value}分钟`;
+  };
+
+  const formatDateTime = (timestamp?: number) => {
+    if (!timestamp) return '-';
+    const date = new Date(timestamp);
+    return `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  };
+
+  const filteredAdjustments = useMemo(() => {
+    return planAdjustments.filter(a => a.status === planTab);
+  }, [planAdjustments, planTab]);
+
+  const tabCounts = useMemo(() => ({
+    pending: planAdjustments.filter(a => a.status === 'pending').length,
+    applied: planAdjustments.filter(a => a.status === 'applied').length,
+    dismissed: planAdjustments.filter(a => a.status === 'dismissed').length,
+  }), [planAdjustments]);
+
+  const renderAppliedSettings = (adjustment: PlanAdjustment) => {
+    if (!adjustment.appliedSettings) return null;
+    const changes: string[] = [];
+    
+    if (adjustment.appliedSettings.pomodoro) {
+      if (adjustment.appliedSettings.pomodoro.workMinutes !== undefined) {
+        changes.push(`番茄钟工作时长 ${adjustment.currentValue}分钟 → ${adjustment.suggestedValue}分钟`);
+      }
+      if (adjustment.appliedSettings.pomodoro.restMinutes !== undefined) {
+        changes.push(`番茄钟休息时长 ${adjustment.currentValue}分钟 → ${adjustment.suggestedValue}分钟`);
+      }
+    }
+    if (adjustment.appliedSettings.sedentary) {
+      changes.push(`久坐提醒阈值 ${adjustment.currentValue}分钟 → ${adjustment.suggestedValue}分钟`);
+    }
+    if (adjustment.appliedSettings.water) {
+      changes.push(`饮水提醒间隔 ${adjustment.currentValue}分钟 → ${adjustment.suggestedValue}分钟`);
+    }
+    if (adjustment.appliedSettings.eyeExercise) {
+      changes.push(`眼保健操间隔 ${adjustment.currentValue}小时 → ${adjustment.suggestedValue}小时`);
+    }
+    if (adjustment.appliedSettings.stretching) {
+      changes.push(`拉伸提醒间隔 ${adjustment.currentValue}小时 → ${adjustment.suggestedValue}小时`);
+    }
+    
+    return changes;
   };
 
   return (
@@ -696,8 +768,8 @@ export const TrendReport: React.FC = () => {
               <Zap size={20} className="text-accent-500" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-ink-700">智能计划调整建议</h3>
-              <p className="text-sm text-ink-400">基于你的数据自动生成，可手动采纳</p>
+              <h3 className="text-lg font-bold text-ink-700">计划建议中心</h3>
+              <p className="text-sm text-ink-400">基于你的数据自动生成，可手动采纳或忽略</p>
             </div>
           </div>
           <button
@@ -709,87 +781,172 @@ export const TrendReport: React.FC = () => {
           </button>
         </div>
 
-        {planAdjustments.filter(a => !a.applied).length === 0 ? (
-          <div className="text-center py-8 text-ink-400">
-            <Heart size={48} className="mx-auto mb-2 opacity-50" />
-            <p>当前没有待采纳的计划调整建议</p>
-            <p className="text-sm">继续保持良好的健康习惯！</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <AnimatePresence>
-              {planAdjustments.filter(a => !a.applied).map((adjustment, index) => (
-                <motion.div
-                  key={adjustment.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                  className="p-4 bg-warm-50 rounded-xl border border-warm-200"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <p className="font-medium text-ink-700">{adjustment.reason}</p>
-                      <div className="flex items-center gap-4 mt-2">
-                        <span className="text-sm text-ink-500">
-                          当前: {adjustment.type === 'pomodoro' && adjustment.currentValue > 15 ? `${adjustment.currentValue}分钟工作` :
-                                 adjustment.type === 'pomodoro' ? `${adjustment.currentValue}分钟休息` :
-                                 adjustment.type === 'sedentary' ? `${adjustment.currentValue}分钟提醒` :
-                                 adjustment.type === 'water' ? `${adjustment.currentValue}分钟间隔` :
-                                 `${adjustment.currentValue}小时间隔`}
-                        </span>
-                        <ChevronRight size={16} className="text-primary-500" />
-                        <span className="text-sm font-medium text-primary-600">
-                          建议: {adjustment.type === 'pomodoro' && adjustment.suggestedValue > 15 ? `${adjustment.suggestedValue}分钟工作` :
-                                 adjustment.type === 'pomodoro' ? `${adjustment.suggestedValue}分钟休息` :
-                                 adjustment.type === 'sedentary' ? `${adjustment.suggestedValue}分钟提醒` :
-                                 adjustment.type === 'water' ? `${adjustment.suggestedValue}分钟间隔` :
-                                 `${adjustment.suggestedValue}小时间隔`}
-                        </span>
+        <div className="flex border-b border-warm-200 mb-4">
+          {[
+            { id: 'pending', label: '待采纳', count: tabCounts.pending },
+            { id: 'applied', label: '已采纳', count: tabCounts.applied },
+            { id: 'dismissed', label: '已忽略', count: tabCounts.dismissed },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setPlanTab(tab.id as typeof planTab)}
+              className={`px-4 py-2 text-sm font-medium transition-all border-b-2 -mb-px ${
+                planTab === tab.id
+                  ? 'border-primary-500 text-primary-600'
+                  : 'border-transparent text-ink-500 hover:text-ink-700'
+              }`}
+            >
+              {tab.label}
+              {tab.count > 0 && (
+                <span className={`ml-1.5 px-1.5 py-0.5 text-xs rounded-full ${
+                  planTab === tab.id
+                    ? 'bg-primary-100 text-primary-600'
+                    : 'bg-warm-200 text-ink-500'
+                }`}>
+                  {tab.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        <AnimatePresence mode="wait">
+          {filteredAdjustments.length === 0 ? (
+            <motion.div
+              key="empty"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="text-center py-8 text-ink-400"
+            >
+              <Heart size={48} className="mx-auto mb-2 opacity-50" />
+              <p>
+                {planTab === 'pending' && '当前没有待采纳的计划调整建议'}
+                {planTab === 'applied' && '还没有采纳过任何计划调整建议'}
+                {planTab === 'dismissed' && '还没有忽略过任何计划调整建议'}
+              </p>
+              <p className="text-sm">
+                {planTab === 'pending' && '继续保持良好的健康习惯！'}
+                {planTab === 'applied' && '点击"刷新建议"生成新的调整建议'}
+                {planTab === 'dismissed' && '所有建议都已经过你的认真考量'}
+              </p>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="list"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="space-y-3 max-h-96 overflow-y-auto"
+            >
+              <AnimatePresence>
+                {filteredAdjustments.map((adjustment, index) => (
+                  <motion.div
+                    key={adjustment.id}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                    className={`p-4 rounded-xl border ${
+                      planTab === 'pending'
+                        ? 'bg-warm-50 border-warm-200'
+                        : planTab === 'applied'
+                        ? 'bg-green-50 border-green-200'
+                        : 'bg-ink-50 border-ink-200'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`px-2 py-0.5 text-xs rounded-full ${
+                            planTab === 'pending'
+                              ? 'bg-warm-200 text-ink-600'
+                              : planTab === 'applied'
+                              ? 'bg-green-200 text-green-700'
+                              : 'bg-ink-200 text-ink-600'
+                          }`}>
+                            {typeLabels[adjustment.type]}
+                          </span>
+                          {planTab === 'applied' && adjustment.appliedAt && (
+                            <span className="text-xs text-ink-400 flex items-center gap-1">
+                              <Clock size={12} />
+                              采纳于 {formatDateTime(adjustment.appliedAt)}
+                            </span>
+                          )}
+                          {planTab === 'dismissed' && adjustment.dismissedAt && (
+                            <span className="text-xs text-ink-400 flex items-center gap-1">
+                              <Clock size={12} />
+                              忽略于 {formatDateTime(adjustment.dismissedAt)}
+                            </span>
+                          )}
+                        </div>
+                        <p className="font-medium text-ink-700">{adjustment.reason}</p>
+                        
+                        {planTab === 'applied' ? (
+                          <div className="mt-3 p-3 bg-white rounded-lg border border-green-200">
+                            <div className="flex items-center gap-2 mb-2">
+                              <SettingsIcon size={14} className="text-green-600" />
+                              <span className="text-sm font-medium text-green-700">已生效的设置变更</span>
+                            </div>
+                            <div className="space-y-1">
+                              {renderAppliedSettings(adjustment)?.map((change, i) => (
+                                <div key={i} className="text-sm text-ink-600 flex items-center gap-2">
+                                  <Check size={14} className="text-green-500" />
+                                  {change}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-4 mt-2">
+                            <span className="text-sm text-ink-500">
+                              {fieldLabels[adjustment.field]}: {formatValue(adjustment.type, adjustment.field, adjustment.currentValue)}
+                            </span>
+                            <ChevronRight size={16} className="text-primary-500" />
+                            <span className="text-sm font-medium text-primary-600">
+                              建议: {formatValue(adjustment.type, adjustment.field, adjustment.suggestedValue)}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
-                  </div>
-                  <div className="flex gap-2 mt-3">
-                    <button
-                      onClick={() => applyPlanAdjustment(adjustment.id)}
-                      className="btn-primary btn-sm flex items-center gap-2"
-                    >
-                      <Check size={14} />
-                      采纳建议
-                    </button>
-                    <button
-                      onClick={() => dismissPlanAdjustment(adjustment.id)}
-                      className="btn-secondary btn-sm flex items-center gap-2"
-                    >
-                      <X size={14} />
-                      暂时忽略
-                    </button>
-                  </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
-        )}
 
-        {planAdjustments.filter(a => a.applied).length > 0 && (
-          <div className="mt-4 pt-4 border-t border-warm-200">
-            <p className="text-sm text-ink-400 mb-2">已采纳的建议</p>
-            <div className="flex flex-wrap gap-2">
-              {planAdjustments.filter(a => a.applied).map(adjustment => (
-                <span
-                  key={adjustment.id}
-                  className="px-3 py-1 bg-green-50 text-green-600 text-xs rounded-full flex items-center gap-1"
-                >
-                  <Check size={12} />
-                  {adjustment.type === 'pomodoro' ? '番茄钟' :
-                   adjustment.type === 'sedentary' ? '久坐提醒' :
-                   adjustment.type === 'water' ? '饮水提醒' :
-                   adjustment.type === 'eye' ? '眼保健操' : '拉伸提醒'}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
+                    {planTab === 'pending' && (
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={() => applyPlanAdjustment(adjustment.id)}
+                          className="btn-primary btn-sm flex items-center gap-2"
+                        >
+                          <Check size={14} />
+                          采纳建议
+                        </button>
+                        <button
+                          onClick={() => dismissPlanAdjustment(adjustment.id)}
+                          className="btn-secondary btn-sm flex items-center gap-2"
+                        >
+                          <X size={14} />
+                          暂时忽略
+                        </button>
+                      </div>
+                    )}
+
+                    {planTab === 'dismissed' && (
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={() => restoreDismissedAdjustment(adjustment.id)}
+                          className="btn-primary btn-sm flex items-center gap-2"
+                        >
+                          <RotateCcw size={14} />
+                          恢复为待采纳
+                        </button>
+                      </div>
+                    )}
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
     </motion.div>
   );

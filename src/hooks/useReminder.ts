@@ -21,6 +21,7 @@ export const useReminder = () => {
     resetAbnormalCount,
     addReminderLog,
     setCurrentView,
+    checkNotificationThrottle,
   } = useAppStore();
 
   const reminderState = useRef<ReminderState>({
@@ -38,6 +39,11 @@ export const useReminder = () => {
   });
 
   const showNotification = useCallback(async (type: ReminderType, title: string, body: string) => {
+    if (!checkNotificationThrottle(type)) {
+      console.log('[提醒节流] 同一分钟内已提醒过，跳过:', type);
+      return;
+    }
+
     if (settings.focusMode.enabled) {
       const isInFocusTime = isInTimeRange(settings.focusMode.start, settings.focusMode.end);
       if (isInFocusTime && settings.focusMode.muteSound) {
@@ -62,7 +68,7 @@ export const useReminder = () => {
         new Notification(title, { body, icon: '/favicon.svg' });
       }
     }
-  }, [settings.focusMode, isWorking, addReminderLog]);
+  }, [settings.focusMode, isWorking, addReminderLog, checkNotificationThrottle]);
 
   const shouldTrigger = useCallback((type: ReminderType, intervalMs: number): boolean => {
     const now = Date.now();

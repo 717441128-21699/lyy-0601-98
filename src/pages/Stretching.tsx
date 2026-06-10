@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useAppStore } from '@/store/useAppStore';
 import { useCountdownTimer } from '@/hooks/useTimer';
@@ -20,11 +20,12 @@ import {
 import type { StretchAction } from '@/types';
 
 export const Stretching: React.FC = () => {
-  const { settings, updateSettings, addStretchingMinutes, todayRecord } = useAppStore();
+  const { settings, updateSettings, addStretchingMinutes, todayRecord, addActivity } = useAppStore();
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'neck' | 'shoulder' | 'wrist' | 'back'>('all');
   const [currentAction, setCurrentAction] = useState<StretchAction | null>(null);
   const [isStarted, setIsStarted] = useState(false);
   const [completedActions, setCompletedActions] = useState<string[]>([]);
+  const stretchGroupIdRef = useRef<string | null>(null);
 
   const filteredActions = selectedCategory === 'all'
     ? stretchActions
@@ -33,31 +34,32 @@ export const Stretching: React.FC = () => {
   const handleComplete = useCallback(() => {
     if (currentAction) {
       setCompletedActions(prev => [...prev, currentAction.id]);
-      addStretchingMinutes(Math.ceil(currentAction.duration / 60));
+      const minutes = Math.ceil(currentAction.duration / 60);
+      addStretchingMinutes(minutes);
+      if (stretchGroupIdRef.current) {
+        addActivity('stretching_complete', { minutes, action: currentAction.name, category: currentAction.category }, true, stretchGroupIdRef.current);
+        stretchGroupIdRef.current = null;
+      }
       const currentIndex = filteredActions.findIndex(a => a.id === currentAction.id);
       if (currentIndex < filteredActions.length - 1) {
-        setCurrentAction(filteredActions[currentIndex + 1]);
+        const nextAction = filteredActions[currentIndex + 1];
+        setCurrentAction(nextAction);
+        setTimeout(() => {
+          timer.resetWithNewDuration(nextAction.duration, true);
+        }, 100);
       } else {
         setIsStarted(false);
       }
     }
-  }, [currentAction, filteredActions, addStretchingMinutes]);
+  }, [currentAction, filteredActions, addStretchingMinutes, addActivity]);
 
   const timer = useCountdownTimer(currentAction?.duration || 0, handleComplete);
 
   React.useEffect(() => {
-    if (isStarted && timer.seconds === 0 && currentAction) {
-      const currentIndex = filteredActions.findIndex(a => a.id === currentAction.id);
-      if (currentIndex < filteredActions.length - 1) {
-        const nextAction = filteredActions[currentIndex + 1];
-        if (nextAction) {
-          setTimeout(() => {
-            timer.resetWithNewDuration(nextAction.duration, true);
-          }, 100);
-        }
-      }
+    if (isStarted && currentAction) {
+      timer.resetWithNewDuration(currentAction.duration, timer.isActive);
     }
-  }, [currentAction, isStarted, filteredActions, timer]);
+  }, [currentAction]);
 
   const progress = currentAction
     ? ((currentAction.duration - timer.seconds) / currentAction.duration) * 100
@@ -82,6 +84,9 @@ export const Stretching: React.FC = () => {
   };
 
   const startStretching = (action: StretchAction) => {
+    const groupId = `stretch-${Date.now()}`;
+    stretchGroupIdRef.current = groupId;
+    addActivity('stretching_start', { action: action.name, category: action.category, duration: action.duration }, true, groupId);
     setCurrentAction(action);
     setIsStarted(true);
     timer.resetWithNewDuration(action.duration, true);
